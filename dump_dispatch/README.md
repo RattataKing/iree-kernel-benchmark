@@ -14,8 +14,8 @@ Use `parquet` to store data.
 `dispatches.parquet`:
 ```
 dispatch_id        STRING
-model_tag          STRING          -- e.g., llama-8b, sdxl
-op_kind            STRING          -- matmul/conv/attention, ...
+model              STRING          -- e.g., llama, gpt4
+op_tag             STRING          -- llama13bmatvec, llama70bmatvec, llama13bskinny, ...
 M                  INT32
 N                  INT32
 K                  INT32
@@ -24,7 +24,7 @@ dtype_b            STRING
 dtype_acc          STRING
 trans_a            STRING          -- 'N'/'T' (logical transpose)
 trans_b            STRING
-source_mlir_digest STRING          -- hash of the generated MLIR text
+source_mlir_hash   STRING          -- hash of the generated MLIR text
 notes              STRING          -- optional extra comments
 ```
 

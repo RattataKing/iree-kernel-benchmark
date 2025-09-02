@@ -1,27 +1,22 @@
 from pathlib import Path
 from iree.compiler import ir
-from iree_kernel_benchmark.gemmbench.gemm_utils import generate_mlir, kDynamic
+from iree_kernel_benchmark.gemmbench.gemm_utils import generate_mlir
 from iree_kernel_benchmark.gemmbench import problems
 import pyarrow as pa
 import pyarrow.parquet as pq
-from datetime import datetime, timezone
-from dataclasses import dataclass, field
-
-
-
-# iree_kernel_benchmark.gemmbench.gemm_utils.generate_mlir()
-# iree_kernel_benchmark.gemmbench.problems
+from datetime import datetime
+from dataclasses import dataclass
+import hashlib
 
 DEFAULT_DTYPE = "f16"
 DEFAULT_RAW_ACC_BOOL = True
-KDYNAMIC = kDynamic
 ALLOWED_TRANS = {"N", "T"}
 
 @dataclass
 class DispatchRecord:
     dispatch_id: str                    # stable UUID/ulid
-    model_tag: str                      # e.g., llama-8b, sdxl
-    op_kind: str                        # qkv_proj, attn_out, ffn_up, conv_im2col, etc.
+    model: str                          # e.g., llama, GPT4
+    op_tag: str                         # llama13bmatvec, llama70bmatvec, llama13bskinny, etc.
     M: int
     N: int
     K: int
@@ -30,14 +25,13 @@ class DispatchRecord:
     dtype_acc: str
     trans_a: str                        # 'N'/'T'
     trans_b: str
+    source_mlir_hash: str
     notes: str = ""                     # optional
-    created_ts: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    schema_version: int = 1             # start at 1
 
 DISPATCH_SCHEMA = pa.schema([
     ("dispatch_id", pa.string()),
-    ("model_tag", pa.string()),
-    ("op_kind", pa.string()),
+    ("model", pa.string()),
+    ("op_tag", pa.string()),
     ("M", pa.int32()),
     ("N", pa.int32()),
     ("K", pa.int32()),
@@ -46,9 +40,8 @@ DISPATCH_SCHEMA = pa.schema([
     ("dtype_acc", pa.string()),
     ("trans_a", pa.string()),
     ("trans_b", pa.string()),
+    ("source_mlir_hash", pa.string()),
     ("notes", pa.string()),
-    ("created_ts", pa.timestamp("us", tz="UTC")),
-    ("schema_version", pa.int16()),
 ])
 
 EXCLUDE_TAGS = (
@@ -60,7 +53,7 @@ EXCLUDE_TAGS = (
     # "llama70bmemory",
 )
 
-def record_from(tag: str, cfg) -> DispatchRecord:
+def record_from(tag: str, cfg, notes:str="") -> DispatchRecord:
     # [WARNING]: Does not support kDynamic
     M, N, K = cfg.M, cfg.N, cfg.K
 
@@ -70,8 +63,8 @@ def record_from(tag: str, cfg) -> DispatchRecord:
 
     return DispatchRecord(
         dispatch_id=f"{tag}_{cfg.get_name()}",
-        model_tag=tag,
-        op_kind="contraction",
+        model="", # Init val
+        op_tag=tag,
         M=int(M),
         N=int(N),
         K=int(K),
@@ -80,24 +73,38 @@ def record_from(tag: str, cfg) -> DispatchRecord:
         dtype_acc=str(cfg.accumulator_element_type),
         trans_a=str(cfg.tA),
         trans_b=str(cfg.tB),
-        notes="",
+        source_mlir_hash="", # Init val
+        notes=notes,
     )
 
 def write_dispatches_parquet(records: list[DispatchRecord], path: Path, compression: str = "zstd") -> None:
     rows = [{
         "dispatch_id": r.dispatch_id,
-        "model_tag": r.model_tag,
-        "op_kind": r.op_kind,
+        "model": r.model,
+        "op_tag": r.op_tag,
         "M": r.M, "N": r.N, "K": r.K,
         "dtype_a": r.dtype_a, "dtype_b": r.dtype_b, "dtype_acc": r.dtype_acc,
         "trans_a": r.trans_a, "trans_b": r.trans_b,
+        "source_mlir_hash": r.source_mlir_hash,
         "notes": r.notes,
-        "created_ts": r.created_ts,            # tz-aware UTC datetime
-        "schema_version": int(r.schema_version),
     } for r in records]
     table = pa.Table.from_pylist(rows, schema=DISPATCH_SCHEMA)
     path.parent.mkdir(parents=True, exist_ok=True)
     pq.write_table(table, path, compression=compression)
+
+def cal_mlir_hash(mlir_text: str) -> str:
+    return hashlib.md5(mlir_text.encode("utf-8")).hexdigest()
+
+def map_op_tag_to_model(op_tag: str) -> str:
+    if "llama" in op_tag:
+        return "llama"
+    if "gpt4" in op_tag:
+        return "gpt4"
+    if "square" in op_tag:
+        return "square"
+    if "unet" in op_tag:
+        return "unet"
+    return ""
 
 def main():
     outdir = Path("dump_dispatch")
@@ -109,24 +116,27 @@ def main():
 
 
     problem_gemm_configs = problems.get_gemm_configs(dtype, raw_accumulators)
-    gemm_configs = [(model, cfg) for model, cfg in problem_gemm_configs if model not in EXCLUDE_TAGS]
-
-    # for tag, cfg in gemm_configs:
-    #     print(cfg.get_name())
+    gemm_configs = [(tag, cfg) for tag, cfg in problem_gemm_configs if tag not in EXCLUDE_TAGS]
 
     # Convert to dispatch records
-    records = [record_from(tag, cfg) for tag, cfg in gemm_configs]
-    # # print(records)
+    # records = [record_from(tag, cfg) for tag, cfg in gemm_configs]
 
-    write_dispatches_parquet(records, outdir / "dispatches.parquet")
-    print(f"Wrote {len(records)} rows -> {outdir/'dispatches.parquet'}")
-
-    # Generate & write text MLIR
+    records: list[DispatchRecord] = []
+    # # Generate & write text MLIR
     with ir.Context():
         for tag, cfg in gemm_configs:
             mlir_text = generate_mlir(cfg)
-            out_path = mlir_outdir / f"{tag}_{cfg.get_name()}.mlir"
-            out_path.write_text(mlir_text)
-            print("wrote", out_path)
+            mlir_hash = cal_mlir_hash(mlir_text)
+            mlir_path = mlir_outdir / f"{tag}_{cfg.get_name()}.mlir"
+            mlir_path.write_text(mlir_text)
+            # print("wrote", mlir_path)
+
+            rec = record_from(tag, cfg)
+            rec.source_mlir_hash = mlir_hash
+            rec.model = map_op_tag_to_model(rec.op_tag)
+            records.append(rec)
+
+    write_dispatches_parquet(records, outdir / "dispatches.parquet")
+    print(f"Wrote {len(records)} rows -> {outdir/'dispatches.parquet'}")
 
 main()
