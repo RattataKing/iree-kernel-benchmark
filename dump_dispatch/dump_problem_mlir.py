@@ -48,8 +48,8 @@ EXCLUDE_TAGS = (
     "llama8b_prefill",
     # "llama13bmatvec",
     # "llama70bmatvec",
-    # "llama13bskinny",
-    # "llama70bskinny",
+    "llama13bskinny",
+    "llama70bskinny",
     # "llama70bmemory",
 )
 
@@ -106,6 +106,16 @@ def map_op_tag_to_model(op_tag: str) -> str:
         return "unet"
     return ""
 
+# Helper function to exclude some records
+def filter_rules_failed(rec:DispatchRecord, verbose:bool=True) -> bool:
+    rule = ""
+    if rec.trans_b == "N":
+        if verbose:
+            rule = "rec.trans_b == N"
+            print(f"Skipping {rec.dispatch_id} due to filter rule: {rule}.")
+        return True
+    return False
+
 def main():
     outdir = Path("dump_dispatch")
     outdir.mkdir(parents=True, exist_ok=True)
@@ -116,6 +126,7 @@ def main():
 
 
     problem_gemm_configs = problems.get_gemm_configs(dtype, raw_accumulators)
+    print(f"Excluded op_tags: {EXCLUDE_TAGS}")
     gemm_configs = [(tag, cfg) for tag, cfg in problem_gemm_configs if tag not in EXCLUDE_TAGS]
 
     # Convert to dispatch records
@@ -125,13 +136,14 @@ def main():
     # # Generate & write text MLIR
     with ir.Context():
         for tag, cfg in gemm_configs:
+            rec = record_from(tag, cfg)
+            if filter_rules_failed(rec):
+                continue
             mlir_text = generate_mlir(cfg)
             mlir_hash = cal_mlir_hash(mlir_text)
             mlir_path = mlir_outdir / f"{tag}_{cfg.get_name()}.mlir"
             mlir_path.write_text(mlir_text)
             # print("wrote", mlir_path)
-
-            rec = record_from(tag, cfg)
             rec.source_mlir_hash = mlir_hash
             rec.model = map_op_tag_to_model(rec.op_tag)
             records.append(rec)
