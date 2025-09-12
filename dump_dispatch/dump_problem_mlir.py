@@ -45,12 +45,13 @@ DISPATCH_SCHEMA = pa.schema([
 ])
 
 EXCLUDE_TAGS = (
+    # Tuner doesn't support prefill/skinny gemm
     "llama8b_prefill",
-    # "llama13bmatvec",
-    # "llama70bmatvec",
+    "llama13bmatvec",
+    "llama70bmatvec",
     "llama13bskinny",
     "llama70bskinny",
-    # "llama70bmemory",
+    "llama70bmemory",
 )
 
 def record_from(tag: str, cfg, notes:str="") -> DispatchRecord:
