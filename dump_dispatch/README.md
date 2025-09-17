@@ -6,9 +6,11 @@ Plan:
 3. Do some data analysis and reversed engineering to find out what makes top candidates win
 4. Design the heuristic sort function
 
-Dir Hierarchy
+Dir Hierarchy:
+```
 --iree-build
 --iree-kernel-benchmark
+```
 
 Run `dump_problem_mlir.py`:
 ```bash
