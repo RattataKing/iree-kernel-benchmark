@@ -142,7 +142,8 @@ def main():
                 continue
             mlir_text = generate_mlir(cfg)
             mlir_hash = cal_mlir_hash(mlir_text)
-            mlir_path = mlir_outdir / f"{tag}_{cfg.get_name()}.mlir"
+            filename = f"{tag}_{cfg.get_name()}.mlir" if DEFAULT_RAW_ACC_BOOL else f"{tag}_{cfg.get_name()}_acc{DEFAULT_DTYPE}.mlir"
+            mlir_path = mlir_outdir / filename
             mlir_path.write_text(mlir_text)
             # print("wrote", mlir_path)
             rec.source_mlir_hash = mlir_hash
