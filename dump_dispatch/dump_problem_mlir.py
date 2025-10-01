@@ -8,7 +8,7 @@ from datetime import datetime
 from dataclasses import dataclass
 import hashlib
 
-DEFAULT_DTYPE = "f16"
+DEFAULT_DTYPE = "f8E4M3FNUZ"
 DEFAULT_RAW_ACC_BOOL = True
 ALLOWED_TRANS = {"N", "T"}
 
