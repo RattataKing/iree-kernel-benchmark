@@ -8,7 +8,7 @@ from datetime import datetime
 from dataclasses import dataclass
 import hashlib
 
-DEFAULT_DTYPE = "f8E4M3FNUZ"
+DTYPE_DUMP_LIST = ["i8", "i32", "f8E4M3FNUZ", "f16", "f32"]
 DEFAULT_RAW_ACC_BOOL = True
 ALLOWED_TRANS = {"N", "T"}
 
@@ -122,33 +122,31 @@ def main():
     outdir.mkdir(parents=True, exist_ok=True)
     mlir_outdir = Path("dump_dispatch/problem_mlir_dump")
     mlir_outdir.mkdir(parents=True, exist_ok=True)
-    dtype = DEFAULT_DTYPE
+
     raw_accumulators = DEFAULT_RAW_ACC_BOOL
-
-
-    problem_gemm_configs = problems.get_gemm_configs(dtype, raw_accumulators)
-    print(f"Excluded op_tags: {EXCLUDE_TAGS}")
-    gemm_configs = [(tag, cfg) for tag, cfg in problem_gemm_configs if tag not in EXCLUDE_TAGS]
-
-    # Convert to dispatch records
-    # records = [record_from(tag, cfg) for tag, cfg in gemm_configs]
-
     records: list[DispatchRecord] = []
-    # # Generate & write text MLIR
-    with ir.Context():
-        for tag, cfg in gemm_configs:
-            rec = record_from(tag, cfg)
-            if filter_rules_failed(rec):
-                continue
-            mlir_text = generate_mlir(cfg)
-            mlir_hash = cal_mlir_hash(mlir_text)
-            filename = f"{tag}_{cfg.get_name()}.mlir" if DEFAULT_RAW_ACC_BOOL else f"{tag}_{cfg.get_name()}_acc{DEFAULT_DTYPE}.mlir"
-            mlir_path = mlir_outdir / filename
-            mlir_path.write_text(mlir_text)
-            # print("wrote", mlir_path)
-            rec.source_mlir_hash = mlir_hash
-            rec.model = map_op_tag_to_model(rec.op_tag)
-            records.append(rec)
+    for dtype in DTYPE_DUMP_LIST:
+        problem_gemm_configs = problems.get_gemm_configs(dtype, raw_accumulators)
+        print(f"Excluded op_tags: {EXCLUDE_TAGS}")
+        gemm_configs = [(tag, cfg) for tag, cfg in problem_gemm_configs if tag not in EXCLUDE_TAGS]
+
+        # Convert to dispatch records
+        # records = [record_from(tag, cfg) for tag, cfg in gemm_configs]
+        # # Generate & write text MLIR
+        with ir.Context():
+            for tag, cfg in gemm_configs:
+                rec = record_from(tag, cfg)
+                if filter_rules_failed(rec):
+                    continue
+                mlir_text = generate_mlir(cfg)
+                mlir_hash = cal_mlir_hash(mlir_text)
+                filename = f"{tag}_{cfg.get_name()}.mlir" if DEFAULT_RAW_ACC_BOOL else f"{tag}_{cfg.get_name()}_acc{DEFAULT_DTYPE}.mlir"
+                mlir_path = mlir_outdir / filename
+                mlir_path.write_text(mlir_text)
+                # print("wrote", mlir_path)
+                rec.source_mlir_hash = mlir_hash
+                rec.model = map_op_tag_to_model(rec.op_tag)
+                records.append(rec)
 
     write_dispatches_parquet(records, outdir / "dispatches.parquet")
     print(f"Wrote {len(records)} rows -> {outdir/'dispatches.parquet'}")
