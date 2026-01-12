@@ -2,8 +2,6 @@ from pathlib import Path
 from iree.compiler import ir
 from iree_kernel_benchmark.gemmbench.gemm_utils import generate_mlir
 from iree_kernel_benchmark.gemmbench import problems
-import pyarrow as pa
-import pyarrow.parquet as pq
 from datetime import datetime
 from dataclasses import dataclass
 import hashlib
@@ -28,21 +26,6 @@ class DispatchRecord:
     source_mlir_hash: str
     notes: str = ""                     # optional
 
-DISPATCH_SCHEMA = pa.schema([
-    ("dispatch_id", pa.string()),
-    ("model", pa.string()),
-    ("op_tag", pa.string()),
-    ("M", pa.int32()),
-    ("N", pa.int32()),
-    ("K", pa.int32()),
-    ("dtype_a", pa.string()),
-    ("dtype_b", pa.string()),
-    ("dtype_acc", pa.string()),
-    ("trans_a", pa.string()),
-    ("trans_b", pa.string()),
-    ("source_mlir_hash", pa.string()),
-    ("notes", pa.string()),
-])
 
 EXCLUDE_TAGS = (
     # Tuner doesn't support prefill/skinny gemm
@@ -77,21 +60,6 @@ def record_from(tag: str, cfg, notes:str="") -> DispatchRecord:
         source_mlir_hash="", # Init val
         notes=notes,
     )
-
-def write_dispatches_parquet(records: list[DispatchRecord], path: Path, compression: str = "zstd") -> None:
-    rows = [{
-        "dispatch_id": r.dispatch_id,
-        "model": r.model,
-        "op_tag": r.op_tag,
-        "M": r.M, "N": r.N, "K": r.K,
-        "dtype_a": r.dtype_a, "dtype_b": r.dtype_b, "dtype_acc": r.dtype_acc,
-        "trans_a": r.trans_a, "trans_b": r.trans_b,
-        "source_mlir_hash": r.source_mlir_hash,
-        "notes": r.notes,
-    } for r in records]
-    table = pa.Table.from_pylist(rows, schema=DISPATCH_SCHEMA)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    pq.write_table(table, path, compression=compression)
 
 def cal_mlir_hash(mlir_text: str) -> str:
     return hashlib.md5(mlir_text.encode("utf-8")).hexdigest()
@@ -147,8 +115,8 @@ def main():
                 rec.source_mlir_hash = mlir_hash
                 rec.model = map_op_tag_to_model(rec.op_tag)
                 records.append(rec)
+        print(f"Dumped {filename}")
 
-    write_dispatches_parquet(records, outdir / "dispatches.parquet")
-    print(f"Wrote {len(records)} rows -> {outdir/'dispatches.parquet'}")
+    print(f"Wrote {len(records)} mlir")
 
 main()
