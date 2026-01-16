@@ -5,8 +5,12 @@ from iree_kernel_benchmark.gemmbench import problems
 from datetime import datetime
 from dataclasses import dataclass
 import hashlib
+import sys
+import os
 
-DTYPE_DUMP_LIST = ["i8", "i32", "f8E4M3FNUZ", "f16", "f32"]
+DTYPE_DUMP_LIST_CDNA3 = ["i8", "i32", "f8E4M3FNUZ", "f16", "f32"]
+DTYPE_DUMP_LIST_UDNA4 = ["i8", "i32", "f8E4M3FN", "f16", "f32"]
+SUPPORT_LIST = ["cdna3", "rdna4", "cdna4", "udna4"]
 DEFAULT_RAW_ACC_BOOL = True
 ALLOWED_TRANS = {"N", "T"}
 
@@ -86,14 +90,19 @@ def filter_rules_failed(rec:DispatchRecord, verbose:bool=True) -> bool:
     return False
 
 def main():
-    outdir = Path("dump_dispatch")
-    outdir.mkdir(parents=True, exist_ok=True)
-    mlir_outdir = Path("dump_dispatch/problem_mlir_dump")
+    if len(sys.argv) < 2:
+        raise SystemExit("Usage: python -m dump_dispatch.dump_problem_mlir <arch>\nExample: python compile_dump_exe.py cdna3")
+    arch = sys.argv[1]
+    assert arch in SUPPORT_LIST
+    dtype_dump_list = DTYPE_DUMP_LIST_CDNA3 if arch == "cdna3" else DTYPE_DUMP_LIST_UDNA4
+
+    base_path = Path(os.path.dirname(os.path.abspath(__file__)))
+    mlir_outdir = base_path / "problem_mlir_dump"
     mlir_outdir.mkdir(parents=True, exist_ok=True)
 
     raw_accumulators = DEFAULT_RAW_ACC_BOOL
     records: list[DispatchRecord] = []
-    for dtype in DTYPE_DUMP_LIST:
+    for dtype in dtype_dump_list:
         problem_gemm_configs = problems.get_gemm_configs(dtype, raw_accumulators)
         print(f"Excluded op_tags: {EXCLUDE_TAGS}")
         gemm_configs = [(tag, cfg) for tag, cfg in problem_gemm_configs if tag not in EXCLUDE_TAGS]
