@@ -10,7 +10,7 @@ import os
 
 DTYPE_DUMP_LIST_CDNA3 = ["i8", "i32", "f8E4M3FNUZ", "f16", "f32"]
 DTYPE_DUMP_LIST_UDNA4 = ["i8", "i32", "f8E4M3FN", "f16", "f32"]
-SUPPORT_LIST = ["cdna3", "rdna4", "cdna4", "udna4"]
+SUPPORT_LIST = ["gfx942", "gfx1201", "gfx950"]
 DEFAULT_RAW_ACC_BOOL = True
 ALLOWED_TRANS = {"N", "T"}
 
@@ -91,13 +91,19 @@ def filter_rules_failed(rec:DispatchRecord, verbose:bool=True) -> bool:
 
 def main():
     if len(sys.argv) < 2:
-        raise SystemExit("Usage: python -m dump_dispatch.dump_problem_mlir <arch>\nExample: python compile_dump_exe.py cdna3")
+        raise SystemExit("Usage: python -m dump_dispatch.dump_problem_mlir <arch>\nExample: python compile_dump_exe.py gfx942")
     arch = sys.argv[1]
     assert arch in SUPPORT_LIST
-    dtype_dump_list = DTYPE_DUMP_LIST_CDNA3 if arch == "cdna3" else DTYPE_DUMP_LIST_UDNA4
+    match arch:
+        case "gfx942":
+            dtype_dump_list = DTYPE_DUMP_LIST_CDNA3
+        case "gfx950" | "gfx1201":
+            dtype_dump_list = DTYPE_DUMP_LIST_UDNA4
+        case _:
+            assert False
 
     base_path = Path(os.path.dirname(os.path.abspath(__file__)))
-    mlir_outdir = base_path / "problem_mlir_dump"
+    mlir_outdir = base_path / f"problem_mlir_dump_{arch}"
     mlir_outdir.mkdir(parents=True, exist_ok=True)
 
     raw_accumulators = DEFAULT_RAW_ACC_BOOL
